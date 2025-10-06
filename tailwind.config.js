@@ -1,9 +1,18 @@
 /** @type {import('tailwindcss').Config} */
-module.exports = {
+export default {
   darkMode: "class",
-  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        gray: require("tailwindcss/colors").gray,
+        slate: require("tailwindcss/colors").slate,
+        blue: require("tailwindcss/colors").blue,
+      },
+    },
   },
   plugins: [],
 };

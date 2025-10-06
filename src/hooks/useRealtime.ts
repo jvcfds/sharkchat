@@ -15,65 +15,76 @@ export function useRealtime({
 }: RealtimeOptions) {
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (!room || !username) return;
 
-    // 🌍 Detecta ambiente automaticamente (local ou produção)
-    const isLocalhost =
-      typeof window !== "undefined" &&
-      (window.location.hostname === "localhost" ||
-        window.location.hostname === "127.0.0.1");
+    const connect = () => {
+      // 🌍 Detecta ambiente automaticamente
+      const isLocalhost =
+        typeof window !== "undefined" &&
+        (window.location.hostname === "localhost" ||
+          window.location.hostname === "127.0.0.1");
 
-    // ✅ WebSocket URL dinâmica
-    const WS_URL = isLocalhost
-      ? "ws://localhost:8080"
-      : "wss://sharkchat-production.up.railway.app"; // 🚀 seu backend do Railway
+      // ✅ Define URL de conexão
+      const WS_URL = isLocalhost
+        ? "ws://localhost:8080"
+        : "wss://sharkchat-production.up.railway.app";
 
-    // 🔑 ID persistente do usuário
-    let id = localStorage.getItem("sharkchat_userid");
-    if (!id) {
-      id = crypto.randomUUID();
-      localStorage.setItem("sharkchat_userid", id);
-    }
-
-    // 🚀 Conexão WebSocket
-    const ws = new WebSocket(
-      `${WS_URL}/?room=${room}&id=${id}&name=${encodeURIComponent(username)}`
-    );
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      console.log("✅ Conectado ao servidor WebSocket");
-      setIsConnected(true);
-    };
-
-    ws.onclose = () => {
-      console.warn("⚠️ Conexão WebSocket encerrada");
-      setIsConnected(false);
-    };
-
-    ws.onerror = (err) => {
-      console.error("❌ Erro na conexão WS:", err);
-      setIsConnected(false);
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === "typing" && onTyping) onTyping(data.user);
-        else onMessage(data);
-      } catch (e) {
-        console.error("Erro ao processar WS:", e);
+      // 🔑 ID único persistente
+      let id = localStorage.getItem("sharkchat_userid");
+      if (!id) {
+        id = crypto.randomUUID();
+        localStorage.setItem("sharkchat_userid", id);
       }
+
+      // 🚀 Conecta ao WebSocket
+      const ws = new WebSocket(
+        `${WS_URL}/?room=${room}&id=${id}&name=${encodeURIComponent(username)}`
+      );
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log("✅ Conectado ao servidor WebSocket");
+        setIsConnected(true);
+      };
+
+      ws.onclose = () => {
+        console.warn("⚠️ Conexão WS encerrada, tentando reconectar...");
+        setIsConnected(false);
+
+        // 🔁 Reconeção automática em 3s
+        if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
+        reconnectTimeout.current = setTimeout(connect, 3000);
+      };
+
+      ws.onerror = (err) => {
+        console.error("❌ Erro WS:", err);
+        setIsConnected(false);
+        ws.close();
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === "typing" && onTyping) onTyping(data.user);
+          else onMessage(data);
+        } catch (e) {
+          console.error("Erro ao processar WS:", e);
+        }
+      };
     };
+
+    connect();
 
     return () => {
-      ws.close();
+      if (wsRef.current) wsRef.current.close();
+      if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
     };
   }, [room, username]);
 
-  // ✉️ Envia mensagem (texto ou imagem)
+  // ✉️ Envia mensagem
   const sendMessage = (msg: { text?: string; image?: string }) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
@@ -86,7 +97,7 @@ export function useRealtime({
     );
   };
 
-  // ⌨️ Notifica digitação
+  // ⌨️ Envia evento de digitação
   const sendTyping = () => {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN)
