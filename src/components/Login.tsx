@@ -8,22 +8,18 @@ export default function Login({ onLogin }: LoginProps) {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
 
+  // 🌐 Detecta automaticamente ambiente (local ou produção)
+  const API_URL =
+    window.location.hostname === "localhost"
+      ? "http://localhost:8080"
+      : "https://sharkchat-production.up.railway.app";
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return setError("Digite um nome válido.");
 
     try {
-      // Detecta ambiente automaticamente
-      const isLocalhost =
-        typeof window !== "undefined" &&
-        (window.location.hostname === "localhost" ||
-          window.location.hostname === "127.0.0.1");
-
-      const API_URL = isLocalhost
-        ? "http://localhost:8080"
-        : "https://sharkchat-production.up.railway.app";
-
-      const res = await fetch(`${API_URL}/login`, {
+      const res = await fetch(⁠ ${API_URL}/login ⁠, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),

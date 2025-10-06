@@ -1,33 +1,32 @@
-import { useEffect, useState } from "react";
-import { Plus, Trash2, X } from "lucide-react";
+import { useState, useEffect } from "react";
 
 interface SidebarProps {
-  onSelectRoom: (roomId: string) => void;
+  onSelectRoom: (room: string) => void;
   currentRoom: string;
-  username: string;
-  closeSidebar: () => void;
 }
 
-export default function Sidebar({
-  onSelectRoom,
-  currentRoom,
-  username,
-  closeSidebar,
-}: SidebarProps) {
+export default function Sidebar({ onSelectRoom, currentRoom }: SidebarProps) {
   const [rooms, setRooms] = useState<{ id: string; name: string; creator: string }[]>([]);
   const [newRoom, setNewRoom] = useState("");
   const [error, setError] = useState("");
-  const userId = localStorage.getItem("sharkchat_userid");
 
-  // 🔄 Carrega salas
+  // Detecta ambiente local ou produção
+  const isLocalhost =
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1";
+
+  const API_URL = isLocalhost
+    ? "http://localhost:8080"
+    : "https://sharkchat-production.up.railway.app";
+
+  // 🔹 Carrega lista de salas
   const fetchRooms = async () => {
     try {
-      const res = await fetch("https://sharkchat-production.up.railway.app/rooms");
+      const res = await fetch(`${API_URL}/rooms`);
       const data = await res.json();
       setRooms(data);
     } catch (err) {
       console.error("Erro ao carregar salas:", err);
-      setError("Erro ao carregar salas.");
     }
   };
 
@@ -35,123 +34,100 @@ export default function Sidebar({
     fetchRooms();
   }, []);
 
-  // ➕ Criar nova sala
-  const createRoom = async () => {
+  // 🦈 Criar nova sala
+  const handleCreateRoom = async () => {
     if (!newRoom.trim()) return;
+
     try {
-      const res = await fetch("https://sharkchat-production.up.railway.app/rooms", {
+      const res = await fetch(`${API_URL}/rooms`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newRoom.trim(), creator: userId }),
+        body: JSON.stringify({
+          name: newRoom.trim(),
+          creator: localStorage.getItem("sharkchat_userid"),
+        }),
       });
 
-      if (!res.ok) {
-        const err = await res.json();
-        setError(err.error || "Erro ao criar sala.");
-        return;
-      }
+      if (!res.ok) throw new Error("Erro ao criar sala");
 
       setNewRoom("");
-      fetchRooms();
+      fetchRooms(); // Atualiza a lista
     } catch (err) {
       console.error("Erro ao criar sala:", err);
       setError("Erro ao criar sala.");
     }
   };
 
-  // 🗑️ Excluir sala (somente criador)
-  const deleteRoom = async (roomId: string) => {
+  // 🗑️ Excluir sala
+  const handleDeleteRoom = async (id: string, creator: string) => {
+    const userId = localStorage.getItem("sharkchat_userid");
+    if (!userId || creator !== userId) {
+      alert("Apenas o criador pode excluir esta sala.");
+      return;
+    }
+
+    if (!confirm("Tem certeza que deseja excluir esta sala?")) return;
+
     try {
-      const res = await fetch(`https://sharkchat-production.up.railway.app/rooms/${roomId}`, {
+      const res = await fetch(`${API_URL}/rooms/${id}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId }),
       });
 
-      if (!res.ok) {
-        const err = await res.json();
-        alert(err.error || "Erro ao excluir sala.");
-        return;
-      }
-
+      if (!res.ok) throw new Error("Erro ao excluir sala");
       fetchRooms();
-      if (currentRoom === roomId) onSelectRoom("geral");
     } catch (err) {
       console.error("Erro ao excluir sala:", err);
     }
   };
 
   return (
-    <div className="flex flex-col w-64 bg-slate-800 border-r border-slate-700 text-slate-100 h-full">
-      {/* 🔹 Cabeçalho */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
-        <h2 className="text-base font-semibold">Conectado como</h2>
-        <button
-          className="md:hidden text-slate-400 hover:text-slate-200"
-          onClick={closeSidebar}
-        >
-          <X size={18} />
-        </button>
-      </div>
+    <aside className="w-60 bg-slate-900 border-r border-slate-800 flex flex-col p-3 text-slate-100">
+      <h2 className="text-lg font-semibold mb-2">Salas</h2>
 
-      {/* 👤 Nome do usuário */}
-      <div className="px-4 py-2 text-blue-400 text-sm font-medium border-b border-slate-700 truncate">
-        {username}
-      </div>
-
-      {/* 📜 Lista de salas */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-1">
-        <h3 className="text-sm text-slate-400 mb-2">Salas</h3>
+      <div className="flex flex-col gap-2 overflow-y-auto flex-1">
         {rooms.map((room) => (
           <div
             key={room.id}
-            className={`flex items-center justify-between px-3 py-2 rounded cursor-pointer transition ${
+            className={`flex items-center justify-between px-3 py-2 rounded cursor-pointer ${
               currentRoom === room.id
                 ? "bg-blue-600 text-white"
-                : "hover:bg-slate-700"
+                : "hover:bg-slate-800"
             }`}
+            onClick={() => onSelectRoom(room.id)}
           >
-            <span onClick={() => onSelectRoom(room.id)} className="truncate">
-              #{room.name}
-            </span>
-
-            {/* 🗑️ Só o criador pode excluir */}
-            {room.creator === userId && room.name !== "geral" && (
+            <span>#{room.name}</span>
+            {room.name !== "geral" && (
               <button
-                onClick={() => deleteRoom(room.id)}
-                className="ml-2 text-slate-400 hover:text-red-500"
-                title="Excluir sala"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteRoom(room.id, room.creator);
+                }}
+                className="text-red-400 hover:text-red-500 text-xs ml-2"
               >
-                <Trash2 size={16} />
+                ✕
               </button>
             )}
           </div>
         ))}
-
-        {rooms.length === 0 && (
-          <p className="text-slate-500 text-sm">Nenhuma sala encontrada.</p>
-        )}
       </div>
 
-      {/* ➕ Criar nova sala */}
-      <div className="p-3 border-t border-slate-700">
+      <div className="mt-4">
         <input
           value={newRoom}
           onChange={(e) => setNewRoom(e.target.value)}
           placeholder="nova sala..."
-          className="w-full mb-2 px-3 py-2 rounded bg-slate-900 text-slate-100 border border-slate-700 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+          className="w-full px-3 py-2 text-sm rounded bg-slate-800 border border-slate-700 focus:ring-2 focus:ring-blue-500 outline-none"
         />
         <button
-          onClick={createRoom}
-          className="flex items-center justify-center gap-2 w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-sm transition"
+          onClick={handleCreateRoom}
+          className="mt-2 w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded transition"
         >
-          <Plus size={14} /> Criar
+          Criar
         </button>
-
-        {error && (
-          <p className="text-red-400 text-xs text-center mt-2">{error}</p>
-        )}
+        {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
       </div>
-    </div>
+    </aside>
   );
 }
