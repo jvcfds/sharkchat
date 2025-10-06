@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 🔧 Corrige cor global do fundo e transições */
+html,
+body,
+#root {
+  height: 100%;
+  background-color: theme('colors.gray.50');
+  color: theme('colors.gray.900');
+  transition:
+    background-color 0.35s ease-in-out,
+    color 0.35s ease-in-out;
+}
+
+/* 🌙 Dark mode */
+html.dark,
+body.dark {
+  background-color: theme('colors.gray.900');
+  color: theme('colors.gray.100');
+}
+
+/* 💎 Glow utilitários opcionais */
+@layer utilities {
+  .glow-input-dark {
+    @apply focus:ring-2 focus:ring-blue-500/50 focus:shadow-[0_0_10px_rgba(56,189,248,0.4)];
+  }
+  .glow-card-dark {
+    @apply ring-1 ring-blue-400/10 shadow-[0_0_25px_-10px_rgba(56,189,248,0.25)];
+  }
+}
