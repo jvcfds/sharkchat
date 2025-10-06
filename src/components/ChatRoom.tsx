@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import MessageList from "@components/MessageList";
 import MessageInput from "@components/MessageInput";
-import { useRealtime } from "@hooks/useRealtime";
 import Header from "@components/Header";
+import { useRealtime } from "@hooks/useRealtime";
 
 interface ChatRoomProps {
   room: string;
@@ -25,29 +25,20 @@ export default function ChatRoom({
   const [usersOnline, setUsersOnline] = useState<string[]>([]);
   const [isCreator, setIsCreator] = useState(false);
 
-  // 🌍 Detecta ambiente (local ou produção)
-  const isLocalhost =
-    typeof window !== "undefined" &&
-    (window.location.hostname === "localhost" ||
-      window.location.hostname === "127.0.0.1");
-
-  const API_BASE = isLocalhost
-    ? "http://localhost:8080"
-    : "https://sharkchat-production.up.railway.app";
-
-  // ⚡ WebSocket hook
   const { sendMessage, sendTyping, isConnected, ws } = useRealtime({
     room,
     username,
     onMessage: (msg) => {
       if (msg.type === "history") setMessages(msg.messages);
-      else if (msg.type === "message") setMessages((p) => [...p, msg]);
+      else if (msg.type === "message") setMessages((prev) => [...prev, msg]);
       else if (msg.type === "system" && msg.users)
         setUsersOnline(msg.users || []);
       if (msg.clear) setMessages([]);
     },
     onTyping: (user) => {
-      setTypingUsers((prev) => (prev.includes(user) ? prev : [...prev, user]));
+      setTypingUsers((prev) =>
+        prev.includes(user) ? prev : [...prev, user]
+      );
       setTimeout(
         () => setTypingUsers((prev) => prev.filter((u) => u !== user)),
         2000
@@ -55,29 +46,27 @@ export default function ChatRoom({
     },
   });
 
-  // 🔍 Verifica se o usuário é o criador da sala
-  useEffect(() => {
-    const verifyCreator = async () => {
-      try {
-        const userId = localStorage.getItem("sharkchat_userid");
-        const res = await fetch(`${API_BASE}/rooms`);
-        const data = await res.json();
-        const current = data.find((r: any) => r.id === room);
-        if (current?.creator === userId) setIsCreator(true);
-        else setIsCreator(false);
-      } catch (err) {
-        console.error("Erro ao verificar criador:", err);
-      }
-    };
-    verifyCreator();
-  }, [room]);
-
-  // 📜 Scroll automático
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // 🧹 Limpar sala (só criador)
+  // ⚙️ Identifica se o usuário é criador da sala
+  useEffect(() => {
+    const userId = localStorage.getItem("sharkchat_userid");
+    fetch(
+      window.location.hostname === "localhost"
+        ? `http://localhost:8080/rooms`
+        : `https://sharkchat-production.up.railway.app/rooms`
+    )
+      .then((res) => res.json())
+      .then((rooms) => {
+        const found = rooms.find((r: any) => r.name === room);
+        setIsCreator(found?.creator === userId);
+      })
+      .catch(console.error);
+  }, [room]);
+
+  // 🧹 Limpar chat
   const handleClear = () => {
     if (isCreator && ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "clear" }));
@@ -85,50 +74,58 @@ export default function ChatRoom({
   };
 
   return (
-    <div
-      className={`flex flex-col h-full w-full ${
-        theme === "dark"
-          ? "bg-slate-900 text-slate-100"
-          : "bg-slate-50 text-slate-900"
-      } transition-colors duration-500`}
-    >
-      {/* Cabeçalho */}
-      <Header
-        room={room}
-        theme={theme}
-        toggleTheme={toggleTheme}
-        openSidebar={openSidebar}
-        usersOnline={usersOnline}
-      />
-
-      {/* Mensagens */}
-      <div className="flex-1 overflow-y-auto p-4">
-        <MessageList messages={messages} typingUsers={typingUsers} />
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Input */}
-      <div
-        className={`border-t ${
-          theme === "dark" ? "border-slate-700" : "border-slate-300"
-        }`}
-      >
-        <MessageInput
-          onSend={sendMessage}
-          onTyping={sendTyping}
-          disabled={!isConnected}
+    <div className="flex flex-col md:flex-row h-full w-full bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 transition-colors duration-500">
+      {/* Área principal */}
+      <div className="flex flex-col flex-1">
+        <Header
+          room={room}
+          theme={theme}
+          toggleTheme={toggleTheme}
+          openSidebar={openSidebar}
+          onClear={handleClear}
+          usersOnline={usersOnline}
         />
-        {isCreator && (
-          <div className="p-2 text-center">
-            <button
-              onClick={handleClear}
-              className="text-xs text-red-400 hover:text-red-600 transition"
-            >
-              💨 Limpar mensagens da sala
-            </button>
-          </div>
-        )}
+
+        {/* Mensagens */}
+        <div className="flex-1 overflow-y-auto p-4">
+          <MessageList messages={messages} typingUsers={typingUsers} />
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Input */}
+        <div className="border-t border-slate-300 dark:border-slate-700">
+          <MessageInput
+            onSend={sendMessage}
+            onTyping={sendTyping}
+            disabled={!isConnected}
+          />
+        </div>
       </div>
+
+      {/* Painel lateral de usuários online */}
+      <aside className="hidden md:block w-64 border-l border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 p-4">
+        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">
+          Usuários online
+        </h3>
+        {usersOnline.length === 0 ? (
+          <p className="text-slate-500 text-sm">Ninguém aqui ainda...</p>
+        ) : (
+          <ul className="space-y-2">
+            {usersOnline.map((user, i) => (
+              <li
+                key={i}
+                className={`text-sm px-2 py-1 rounded ${
+                  user === username
+                    ? "bg-blue-600 text-white font-medium"
+                    : "bg-slate-200 dark:bg-slate-700"
+                }`}
+              >
+                {user}
+              </li>
+            ))}
+          </ul>
+        )}
+      </aside>
     </div>
   );
 }
