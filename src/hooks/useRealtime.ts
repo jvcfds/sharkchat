@@ -20,26 +20,26 @@ export function useRealtime({
   useEffect(() => {
     if (!room || !username) return;
 
+    // 🌎 Detecta ambiente automaticamente
+    const isLocal =
+      typeof window !== "undefined" &&
+      (window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1");
+
+    // 🔗 Escolhe URL correta
+    const WS_URL = isLocal
+      ? "ws://localhost:8080"
+      : "wss://sharkchat-production.up.railway.app"; // ✅ seu backend do Railway
+
+    // 🔑 ID persistente do usuário
+    let id = localStorage.getItem("sharkchat_userid");
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem("sharkchat_userid", id);
+    }
+
+    // 🚀 Cria e gerencia a conexão WebSocket
     const connect = () => {
-      // 🌍 Detecta ambiente automaticamente
-      const isLocalhost =
-        typeof window !== "undefined" &&
-        (window.location.hostname === "localhost" ||
-          window.location.hostname === "127.0.0.1");
-
-      // ✅ Define URL de conexão
-      const WS_URL = isLocalhost
-        ? "ws://localhost:8080"
-        : "wss://sharkchat-production.up.railway.app";
-
-      // 🔑 ID único persistente
-      let id = localStorage.getItem("sharkchat_userid");
-      if (!id) {
-        id = crypto.randomUUID();
-        localStorage.setItem("sharkchat_userid", id);
-      }
-
-      // 🚀 Conecta ao WebSocket
       const ws = new WebSocket(
         `${WS_URL}/?room=${room}&id=${id}&name=${encodeURIComponent(username)}`
       );
@@ -51,17 +51,13 @@ export function useRealtime({
       };
 
       ws.onclose = () => {
-        console.warn("⚠️ Conexão WS encerrada, tentando reconectar...");
+        console.warn("⚠️ Conexão WebSocket encerrada. Tentando reconectar...");
         setIsConnected(false);
-
-        // 🔁 Reconeção automática em 3s
-        if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
-        reconnectTimeout.current = setTimeout(connect, 3000);
+        reconnect();
       };
 
       ws.onerror = (err) => {
-        console.error("❌ Erro WS:", err);
-        setIsConnected(false);
+        console.error("❌ Erro na conexão WS:", err);
         ws.close();
       };
 
@@ -76,15 +72,24 @@ export function useRealtime({
       };
     };
 
+    // 🔁 Reconexão automática
+    const reconnect = () => {
+      if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
+      reconnectTimeout.current = setTimeout(() => {
+        console.log("🔄 Tentando reconectar WebSocket...");
+        connect();
+      }, 2000);
+    };
+
     connect();
 
     return () => {
-      if (wsRef.current) wsRef.current.close();
       if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
+      wsRef.current?.close();
     };
   }, [room, username]);
 
-  // ✉️ Envia mensagem
+  // ✉️ Enviar mensagem
   const sendMessage = (msg: { text?: string; image?: string }) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
@@ -97,7 +102,7 @@ export function useRealtime({
     );
   };
 
-  // ⌨️ Envia evento de digitação
+  // ⌨️ Enviar evento de digitação
   const sendTyping = () => {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN)

@@ -1,21 +1,14 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-@layer base {
-  body {
-    @apply bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100 transition-colors duration-500;
-  }
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: theme("colors.gray.50");
 }
 
-@layer utilities {
-  ::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    @apply bg-slate-400 dark:bg-slate-600 rounded-full;
-  }
-
-  input, button {
-    @apply transition-colors duration-300;
-  }
+body.dark {
+  background-color: theme("colors.slate.900");
 }

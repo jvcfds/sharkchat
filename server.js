@@ -225,9 +225,18 @@ function getUsersInRoom(room) {
   return users;
 }
 
+// ✅ Página inicial para Railway
+app.get("/", (req, res) => {
+  res.send(`
+    <h1>🦈 SharkChat servidor rodando!</h1>
+    <p>HTTP ativo em <strong>${req.hostname}</strong></p>
+    <p>WebSocket ativo em <code>wss://${req.hostname}</code></p>
+  `);
+});
+
 // 🚀 Inicializa servidor
 const PORT = process.env.PORT || 8080;
-server.listen(PORT, () => {
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ SharkChat rodando:
 HTTP → http://localhost:${PORT}
 WS   → ws://localhost:${PORT}`);
