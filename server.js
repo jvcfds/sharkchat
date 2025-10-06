@@ -7,14 +7,10 @@ import sqlite3 from "sqlite3";
 import { open } from "sqlite";
 
 const app = express();
-app.use(
-  cors({
-    origin: "*",
-  })
-);
+app.use(cors({ origin: "*", methods: ["GET", "POST", "DELETE"] }));
 app.use(express.json());
 
-// 🧠 Banco SQLite
+// 🧠 Inicializa banco SQLite
 let db;
 (async () => {
   db = await open({
@@ -30,7 +26,10 @@ let db;
     )
   `);
 
-  // 🔹 Garante que a sala "geral" exista
+  // 🧹 Limpa todas as salas, exceto "geral"
+  await db.run(`DELETE FROM rooms WHERE name != 'geral'`);
+
+  // 🔹 Garante que "geral" exista
   const geral = await db.get("SELECT * FROM rooms WHERE name = ?", ["geral"]);
   if (!geral) {
     await db.run(
@@ -40,28 +39,24 @@ let db;
     console.log("✅ Sala geral criada automaticamente.");
   }
 
-  console.log("✅ Banco SQLite conectado.");
+  console.log("✅ Banco SQLite conectado e limpo (mantida apenas sala geral).");
 })();
 
 // 🔌 Servidor HTTP + WebSocket
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-// Armazenamento temporário em memória
+// Armazenamento em memória
 const rooms = {};
 const creators = {};
 
-// 🧾 LOGIN — gera ID e salva localmente
+// 🧾 LOGIN
 app.post("/login", (req, res) => {
   const { name } = req.body;
-  if (!name || name.trim().length < 2) {
+  if (!name || name.trim().length < 2)
     return res.status(400).json({ error: "Nome inválido" });
-  }
 
-  // Se o usuário já tiver ID salvo no navegador, reutiliza
-  const existingId = req.headers["x-user-id"];
-  const id = existingId || uuidv4();
-
+  const id = uuidv4();
   res.json({ id, name });
 });
 
@@ -70,7 +65,7 @@ app.get("/rooms", async (_, res) => {
   try {
     const all = await db.all("SELECT * FROM rooms");
     res.json(all);
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Erro ao listar salas." });
   }
 });
@@ -81,9 +76,8 @@ app.post("/rooms", async (req, res) => {
   if (!name || !creator)
     return res.status(400).json({ error: "Dados inválidos" });
 
-  if (name.toLowerCase() === "geral") {
+  if (name.toLowerCase() === "geral")
     return res.status(400).json({ error: "A sala 'geral' já existe e é fixa." });
-  }
 
   try {
     const id = uuidv4();
@@ -101,7 +95,7 @@ app.post("/rooms", async (req, res) => {
   }
 });
 
-// 🗑️ EXCLUIR SALA (somente criador)
+// 🗑️ EXCLUIR SALA
 app.delete("/rooms/:id", async (req, res) => {
   const { id } = req.params;
   const { userId } = req.body;
@@ -111,15 +105,15 @@ app.delete("/rooms/:id", async (req, res) => {
 
   try {
     const room = await db.get("SELECT * FROM rooms WHERE id = ?", [id]);
-    if (!room)
-      return res.status(404).json({ error: "Sala não encontrada." });
+    if (!room) return res.status(404).json({ error: "Sala não encontrada." });
 
     if (room.name === "geral")
-      return res.status(400).json({ error: "A sala 'geral' não pode ser excluída." });
+      return res
+        .status(400)
+        .json({ error: "A sala 'geral' não pode ser excluída." });
 
-    // 🔹 Corrigido: comparação correta do criador
     if (room.creator.trim() !== userId.trim()) {
-      console.log(`Tentativa de exclusão negada: ${userId} ≠ ${room.creator}`);
+      console.log(`🚫 ${userId} tentou excluir ${room.name} (não é o criador).`);
       return res.status(403).json({ error: "Apenas o criador pode excluir esta sala." });
     }
 
@@ -207,7 +201,7 @@ wss.on("connection", (ws, req) => {
   });
 });
 
-// 🔁 Broadcast
+// 🔊 Broadcast helper
 function broadcast(room, data, exclude) {
   wss.clients.forEach((client) => {
     if (client.readyState === 1 && client.room === room && client !== exclude) {
@@ -225,19 +219,19 @@ function getUsersInRoom(room) {
   return users;
 }
 
-// ✅ Página inicial para Railway
+// 🌍 Página inicial (Railway status)
 app.get("/", (req, res) => {
   res.send(`
-    <h1>🦈 SharkChat servidor rodando!</h1>
-    <p>HTTP ativo em <strong>${req.hostname}</strong></p>
-    <p>WebSocket ativo em <code>wss://${req.hostname}</code></p>
+    <h1>🦈 SharkChat rodando!</h1>
+    <p>HTTP ativo em: <b>${req.hostname}</b></p>
+    <p>WebSocket ativo em: <code>wss://${req.hostname}</code></p>
   `);
 });
 
 // 🚀 Inicializa servidor
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ SharkChat rodando:
+  console.log(`✅ SharkChat ONLINE:
 HTTP → http://localhost:${PORT}
 WS   → ws://localhost:${PORT}`);
 });

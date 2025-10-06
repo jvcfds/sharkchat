@@ -1,38 +1,33 @@
 import { useEffect, useState } from "react";
+import { Plus, Trash2, X } from "lucide-react";
 
 interface SidebarProps {
+  onSelectRoom: (roomId: string) => void;
   currentRoom: string;
-  setCurrentRoom: (room: string) => void;
   username: string;
-  onClose?: () => void;
-  onLogout?: () => void;
+  closeSidebar: () => void;
 }
 
 export default function Sidebar({
+  onSelectRoom,
   currentRoom,
-  setCurrentRoom,
   username,
-  onClose,
-  onLogout,
+  closeSidebar,
 }: SidebarProps) {
   const [rooms, setRooms] = useState<{ id: string; name: string; creator: string }[]>([]);
   const [newRoom, setNewRoom] = useState("");
   const [error, setError] = useState("");
-
-  // 🌍 Detecta se está local ou em produção
-  const API_BASE =
-    window.location.hostname === "localhost"
-      ? "http://localhost:8080"
-      : "https://sharkchat-production.up.railway.app";
+  const userId = localStorage.getItem("sharkchat_userid");
 
   // 🔄 Carrega salas
   const fetchRooms = async () => {
     try {
-      const res = await fetch(`${API_BASE}/rooms`);
+      const res = await fetch("https://sharkchat-production.up.railway.app/rooms");
       const data = await res.json();
       setRooms(data);
     } catch (err) {
-      console.error("Erro ao buscar salas:", err);
+      console.error("Erro ao carregar salas:", err);
+      setError("Erro ao carregar salas.");
     }
   };
 
@@ -40,117 +35,123 @@ export default function Sidebar({
     fetchRooms();
   }, []);
 
-  // ➕ Criar sala
-  const handleCreateRoom = async () => {
+  // ➕ Criar nova sala
+  const createRoom = async () => {
     if (!newRoom.trim()) return;
     try {
-      const res = await fetch(`${API_BASE}/rooms`, {
+      const res = await fetch("https://sharkchat-production.up.railway.app/rooms", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: newRoom.trim(),
-          creator: localStorage.getItem("sharkchat_userid"),
-        }),
+        body: JSON.stringify({ name: newRoom.trim(), creator: userId }),
       });
 
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const err = await res.json();
+        setError(err.error || "Erro ao criar sala.");
+        return;
+      }
+
       setNewRoom("");
       fetchRooms();
-    } catch {
+    } catch (err) {
+      console.error("Erro ao criar sala:", err);
       setError("Erro ao criar sala.");
     }
   };
 
   // 🗑️ Excluir sala (somente criador)
-  const handleDeleteRoom = async (roomId: string) => {
-    const userId = localStorage.getItem("sharkchat_userid");
+  const deleteRoom = async (roomId: string) => {
     try {
-      const res = await fetch(`${API_BASE}/rooms/${roomId}`, {
+      const res = await fetch(`https://sharkchat-production.up.railway.app/rooms/${roomId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId }),
       });
 
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.error || "Erro ao excluir sala.");
+        return;
+      }
+
       fetchRooms();
-    } catch {
-      setError("Erro ao excluir sala.");
+      if (currentRoom === roomId) onSelectRoom("geral");
+    } catch (err) {
+      console.error("Erro ao excluir sala:", err);
     }
   };
 
   return (
-    <aside
-      className="h-full w-64 border-r border-slate-300 dark:border-slate-700 flex flex-col
-                 bg-slate-50 dark:bg-slate-900 transition-colors duration-500"
-    >
-      {/* Usuário */}
-      <div className="p-4 border-b border-slate-300 dark:border-slate-700 flex justify-between items-center">
-        <span className="font-semibold text-slate-800 dark:text-slate-200">
-          {username}
-        </span>
+    <div className="flex flex-col w-64 bg-slate-800 border-r border-slate-700 text-slate-100 h-full">
+      {/* 🔹 Cabeçalho */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
+        <h2 className="text-base font-semibold">Conectado como</h2>
         <button
-          onClick={onLogout}
-          className="text-sm text-slate-500 dark:text-slate-400 hover:text-red-500 transition"
+          className="md:hidden text-slate-400 hover:text-slate-200"
+          onClick={closeSidebar}
         >
-          sair
+          <X size={18} />
         </button>
       </div>
 
-      {/* Lista de salas */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-2">
-        <h3 className="text-sm text-slate-500 dark:text-slate-400 mb-2">Salas</h3>
-        {rooms.length === 0 ? (
+      {/* 👤 Nome do usuário */}
+      <div className="px-4 py-2 text-blue-400 text-sm font-medium border-b border-slate-700 truncate">
+        {username}
+      </div>
+
+      {/* 📜 Lista de salas */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-1">
+        <h3 className="text-sm text-slate-400 mb-2">Salas</h3>
+        {rooms.map((room) => (
+          <div
+            key={room.id}
+            className={`flex items-center justify-between px-3 py-2 rounded cursor-pointer transition ${
+              currentRoom === room.id
+                ? "bg-blue-600 text-white"
+                : "hover:bg-slate-700"
+            }`}
+          >
+            <span onClick={() => onSelectRoom(room.id)} className="truncate">
+              #{room.name}
+            </span>
+
+            {/* 🗑️ Só o criador pode excluir */}
+            {room.creator === userId && room.name !== "geral" && (
+              <button
+                onClick={() => deleteRoom(room.id)}
+                className="ml-2 text-slate-400 hover:text-red-500"
+                title="Excluir sala"
+              >
+                <Trash2 size={16} />
+              </button>
+            )}
+          </div>
+        ))}
+
+        {rooms.length === 0 && (
           <p className="text-slate-500 text-sm">Nenhuma sala encontrada.</p>
-        ) : (
-          rooms.map((room) => (
-            <div
-              key={room.id}
-              className={`group flex justify-between items-center p-2 rounded cursor-pointer transition ${
-                currentRoom === room.name
-                  ? "bg-blue-600 text-white"
-                  : "hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
-              }`}
-              onClick={() => {
-                setCurrentRoom(room.name);
-                onClose?.();
-              }}
-            >
-              <span>#{room.name}</span>
-              {room.name !== "geral" &&
-                room.creator === localStorage.getItem("sharkchat_userid") && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteRoom(room.id);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 text-xs text-red-400 hover:text-red-600"
-                  >
-                    ✕
-                  </button>
-                )}
-            </div>
-          ))
         )}
       </div>
 
-      {/* Criar sala */}
-      <div className="p-4 border-t border-slate-300 dark:border-slate-700">
+      {/* ➕ Criar nova sala */}
+      <div className="p-3 border-t border-slate-700">
         <input
           value={newRoom}
           onChange={(e) => setNewRoom(e.target.value)}
           placeholder="nova sala..."
-          className="w-full px-2 py-1 rounded bg-slate-200 dark:bg-slate-800 
-                     text-slate-900 dark:text-slate-100 border border-slate-400 
-                     dark:border-slate-700 mb-2"
+          className="w-full mb-2 px-3 py-2 rounded bg-slate-900 text-slate-100 border border-slate-700 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
         />
         <button
-          onClick={handleCreateRoom}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white py-1 rounded transition"
+          onClick={createRoom}
+          className="flex items-center justify-center gap-2 w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-sm transition"
         >
-          Criar
+          <Plus size={14} /> Criar
         </button>
-        {error && <p className="text-red-400 text-xs mt-1">{error}</p>}
+
+        {error && (
+          <p className="text-red-400 text-xs text-center mt-2">{error}</p>
+        )}
       </div>
-    </aside>
+    </div>
   );
 }

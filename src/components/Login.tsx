@@ -13,7 +13,7 @@ export default function Login({ onLogin }: LoginProps) {
     if (!name.trim()) return setError("Digite um nome válido.");
 
     try {
-      // 🌍 Detecta automaticamente se está rodando local ou online
+      // Detecta ambiente automaticamente
       const isLocalhost =
         typeof window !== "undefined" &&
         (window.location.hostname === "localhost" ||

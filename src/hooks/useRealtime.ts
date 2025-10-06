@@ -4,110 +4,47 @@ interface RealtimeOptions {
   room: string;
   username: string;
   onMessage: (msg: any) => void;
-  onTyping?: (user: string) => void;
 }
 
-export function useRealtime({
-  room,
-  username,
-  onMessage,
-  onTyping,
-}: RealtimeOptions) {
+export function useRealtime({ room, username, onMessage }: RealtimeOptions) {
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (!room || !username) return;
 
-    // 🌎 Detecta ambiente automaticamente
-    const isLocal =
-      typeof window !== "undefined" &&
-      (window.location.hostname === "localhost" ||
-        window.location.hostname === "127.0.0.1");
-
-    // 🔗 Escolhe URL correta
+    const isLocal = window.location.hostname === "localhost";
     const WS_URL = isLocal
       ? "ws://localhost:8080"
-      : "wss://sharkchat-production.up.railway.app"; // ✅ seu backend do Railway
+      : "wss://sharkchat-production.up.railway.app";
 
-    // 🔑 ID persistente do usuário
     let id = localStorage.getItem("sharkchat_userid");
     if (!id) {
       id = crypto.randomUUID();
       localStorage.setItem("sharkchat_userid", id);
     }
 
-    // 🚀 Cria e gerencia a conexão WebSocket
-    const connect = () => {
-      const ws = new WebSocket(
-        `${WS_URL}/?room=${room}&id=${id}&name=${encodeURIComponent(username)}`
-      );
-      wsRef.current = ws;
+    const ws = new WebSocket(`${WS_URL}/?room=${room}&id=${id}&name=${username}`);
+    wsRef.current = ws;
 
-      ws.onopen = () => {
-        console.log("✅ Conectado ao servidor WebSocket");
-        setIsConnected(true);
-      };
+    ws.onopen = () => setIsConnected(true);
+    ws.onclose = () => setIsConnected(false);
+    ws.onmessage = (event) => onMessage(JSON.parse(event.data));
 
-      ws.onclose = () => {
-        console.warn("⚠️ Conexão WebSocket encerrada. Tentando reconectar...");
-        setIsConnected(false);
-        reconnect();
-      };
-
-      ws.onerror = (err) => {
-        console.error("❌ Erro na conexão WS:", err);
-        ws.close();
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === "typing" && onTyping) onTyping(data.user);
-          else onMessage(data);
-        } catch (e) {
-          console.error("Erro ao processar WS:", e);
-        }
-      };
-    };
-
-    // 🔁 Reconexão automática
-    const reconnect = () => {
-      if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
-      reconnectTimeout.current = setTimeout(() => {
-        console.log("🔄 Tentando reconectar WebSocket...");
-        connect();
-      }, 2000);
-    };
-
-    connect();
-
-    return () => {
-      if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
-      wsRef.current?.close();
-    };
+    return () => ws.close();
   }, [room, username]);
 
-  // ✉️ Enviar mensagem
-  const sendMessage = (msg: { text?: string; image?: string }) => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(
-      JSON.stringify({
-        type: "message",
-        text: msg.text || "",
-        image: msg.image || null,
-      })
-    );
+  const sendMessage = (msg: { text: string }) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "message", text: msg.text }));
+    }
   };
 
-  // ⌨️ Enviar evento de digitação
   const sendTyping = () => {
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN)
-      ws.send(JSON.stringify({ type: "typing" }));
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "typing" }));
+    }
   };
 
-  return { isConnected, sendMessage, sendTyping, ws: wsRef.current };
+  return { isConnected, sendMessage, sendTyping };
 }

@@ -1,45 +1,86 @@
-import { Moon, Sun, Users } from "lucide-react";
+import { Moon, Sun, Users, Trash2, LogOut } from "lucide-react";
+import { useEffect, useState } from "react";
 
 interface HeaderProps {
-  room: string;
-  theme: string;
-  toggleTheme: () => void;
+  roomName: string;
+  onClear: () => void;
+  onLogout: () => void;
   usersOnline: string[];
+  darkMode: boolean;
+  toggleDarkMode: () => void;
 }
 
 export default function Header({
-  room,
-  theme,
-  toggleTheme,
+  roomName,
+  onClear,
+  onLogout,
   usersOnline,
+  darkMode,
+  toggleDarkMode,
 }: HeaderProps) {
-  return (
-    <header className="flex items-center justify-between px-5 py-3 border-b border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/70 backdrop-blur transition-colors">
-      {/* Nome da sala */}
-      <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
-        #{room}
-      </h2>
+  const [formattedRoom, setFormattedRoom] = useState("");
 
-      {/* Seção direita */}
+  useEffect(() => {
+    // 🧠 Exibe o nome real da sala (sem ID)
+    if (!roomName) return;
+    if (roomName.startsWith("#")) {
+      setFormattedRoom(roomName);
+    } else {
+      setFormattedRoom(`#${roomName}`);
+    }
+  }, [roomName]);
+
+  return (
+    <header
+      className={`flex items-center justify-between px-4 py-2 border-b ${
+        darkMode ? "bg-slate-900 border-slate-700" : "bg-slate-100 border-slate-300"
+      }`}
+    >
+      {/* 🦈 Nome da sala */}
+      <div className="flex items-center gap-3">
+        <h2
+          className={`font-semibold text-lg ${
+            darkMode ? "text-blue-400" : "text-blue-600"
+          }`}
+        >
+          {formattedRoom || "#geral"}
+        </h2>
+      </div>
+
+      {/* 🔘 Botões de ação */}
       <div className="flex items-center gap-4">
-        {/* Usuários online */}
-        <div className="flex items-center gap-1 text-slate-600 dark:text-slate-300 text-sm">
-          <Users size={16} />
+        {/* 👥 Usuários online */}
+        <div className="flex items-center gap-1 text-sm text-slate-400">
+          <Users size={18} />
           <span>{usersOnline.length}</span>
           <span className="hidden sm:inline">online</span>
         </div>
 
-        {/* Botão de tema */}
+        {/* 🧹 Limpar chat (apenas criador) */}
         <button
-          onClick={toggleTheme}
-          className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition"
-          title={theme === "dark" ? "Modo claro" : "Modo escuro"}
+          onClick={onClear}
+          className="text-slate-400 hover:text-red-500 transition"
+          title="Limpar mensagens da sala"
         >
-          {theme === "dark" ? (
-            <Sun size={18} className="text-slate-200" />
-          ) : (
-            <Moon size={18} className="text-slate-700" />
-          )}
+          <Trash2 size={18} />
+        </button>
+
+        {/* ☀️🌙 Tema */}
+        <button
+          onClick={toggleDarkMode}
+          className="text-slate-400 hover:text-yellow-400 transition"
+          title="Alternar tema"
+        >
+          {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+        </button>
+
+        {/* 🚪 Sair */}
+        <button
+          onClick={onLogout}
+          className="text-slate-400 hover:text-red-500 transition"
+          title="Sair"
+        >
+          <LogOut size={18} />
         </button>
       </div>
     </header>
