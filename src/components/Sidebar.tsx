@@ -1,28 +1,30 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import { PlusCircle, Trash2, LogOut, Moon, Sun } from "lucide-react";
 
 interface SidebarProps {
-  onSelectRoom: (room: string) => void;
+  user: { id: string; name: string };
   currentRoom: string;
+  onSelectRoom: (room: string) => void;
+  onLogout: () => void;
+  onThemeToggle: () => void;
+  theme: "dark" | "light";
 }
 
-export default function Sidebar({ onSelectRoom, currentRoom }: SidebarProps) {
-  const [rooms, setRooms] = useState<{ id: string; name: string; creator: string }[]>([]);
+export function Sidebar({
+  user,
+  currentRoom,
+  onSelectRoom,
+  onLogout,
+  onThemeToggle,
+  theme,
+}: SidebarProps) {
+  const [rooms, setRooms] = useState<{ id: string; name: string }[]>([]);
   const [newRoom, setNewRoom] = useState("");
-  const [error, setError] = useState("");
 
-  // Detecta ambiente local ou produção
-  const isLocalhost =
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1";
-
-  const API_URL = isLocalhost
-    ? "http://localhost:8080"
-    : "https://sharkchat-production.up.railway.app";
-
-  // 🔹 Carrega lista de salas
+  // Carrega as salas
   const fetchRooms = async () => {
     try {
-      const res = await fetch(`${API_URL}/rooms`);
+      const res = await fetch("http://localhost:8080/rooms");
       const data = await res.json();
       setRooms(data);
     } catch (err) {
@@ -34,99 +36,116 @@ export default function Sidebar({ onSelectRoom, currentRoom }: SidebarProps) {
     fetchRooms();
   }, []);
 
-  // 🦈 Criar nova sala
-  const handleCreateRoom = async () => {
+  // Criar nova sala
+  const createRoom = async () => {
     if (!newRoom.trim()) return;
-
     try {
-      const res = await fetch(`${API_URL}/rooms`, {
+      const res = await fetch("http://localhost:8080/rooms", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: newRoom.trim(),
-          creator: localStorage.getItem("sharkchat_userid"),
-        }),
+        body: JSON.stringify({ name: newRoom, creator: user.name }),
       });
-
-      if (!res.ok) throw new Error("Erro ao criar sala");
-
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setRooms((prev) => [...prev, data]);
       setNewRoom("");
-      fetchRooms(); // Atualiza a lista
     } catch (err) {
-      console.error("Erro ao criar sala:", err);
-      setError("Erro ao criar sala.");
+      alert("❌ Erro ao criar sala");
     }
   };
 
-  // 🗑️ Excluir sala
-  const handleDeleteRoom = async (id: string, creator: string) => {
-    const userId = localStorage.getItem("sharkchat_userid");
-    if (!userId || creator !== userId) {
-      alert("Apenas o criador pode excluir esta sala.");
-      return;
-    }
-
-    if (!confirm("Tem certeza que deseja excluir esta sala?")) return;
-
+  // Excluir sala
+  const deleteRoom = async (roomId: string, roomName: string) => {
+    if (roomName.toLowerCase() === "geral") return;
+    if (!confirm(`Tem certeza que deseja excluir a sala "${roomName}"?`)) return;
     try {
-      const res = await fetch(`${API_URL}/rooms/${id}`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
-      });
-
-      if (!res.ok) throw new Error("Erro ao excluir sala");
-      fetchRooms();
+      await fetch(`http://localhost:8080/rooms/${roomId}`, { method: "DELETE" });
+      setRooms((prev) => prev.filter((r) => r.id !== roomId));
     } catch (err) {
-      console.error("Erro ao excluir sala:", err);
+      alert("❌ Erro ao excluir sala");
     }
   };
 
   return (
-    <aside className="w-60 bg-slate-900 border-r border-slate-800 flex flex-col p-3 text-slate-100">
-      <h2 className="text-lg font-semibold mb-2">Salas</h2>
+    <aside className="flex flex-col bg-[#001823] text-[#E9D8A6] w-full sm:w-64 border-r border-[#0A9396]/40 transition-all">
+      {/* 🦈 Cabeçalho do usuário */}
+      <div className="flex items-center justify-between p-4 border-b border-[#0A9396]/40">
+        <div>
+          <h2 className="text-lg font-bold text-cyan-400">{user.name}</h2>
+          <p className="text-xs text-cyan-300/70">conectado</p>
+        </div>
 
-      <div className="flex flex-col gap-2 overflow-y-auto flex-1">
-        {rooms.map((room) => (
+        {/* Botão de tema */}
+        <button
+          onClick={onThemeToggle}
+          className="p-2 rounded-full hover:bg-[#002733] transition"
+          title={theme === "dark" ? "Modo claro" : "Modo escuro"}
+        >
+          {theme === "dark" ? (
+            <Sun size={18} className="text-yellow-400" />
+          ) : (
+            <Moon size={18} className="text-cyan-400" />
+          )}
+        </button>
+      </div>
+
+      {/* 📜 Lista de salas */}
+      <div className="flex-1 overflow-y-auto px-2 py-3 space-y-1 scrollbar-thin scrollbar-thumb-[#0A9396]/40 scrollbar-track-transparent">
+        {rooms.map((r) => (
           <div
-            key={room.id}
-            className={`flex items-center justify-between px-3 py-2 rounded cursor-pointer ${
-              currentRoom === room.id
-                ? "bg-blue-600 text-white"
-                : "hover:bg-slate-800"
+            key={r.id}
+            className={`group flex items-center justify-between p-2 rounded-lg cursor-pointer transition ${
+              currentRoom === r.name
+                ? "bg-[#0A9396] text-white"
+                : "hover:bg-[#002733]"
             }`}
-            onClick={() => onSelectRoom(room.id)}
+            onClick={() => onSelectRoom(r.name)}
           >
-            <span>#{room.name}</span>
-            {room.name !== "geral" && (
+            <span className="truncate font-medium">{r.name}</span>
+
+            {/* ❌ Só mostra botão de excluir se não for “geral” */}
+            {r.name.toLowerCase() !== "geral" && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleDeleteRoom(room.id, room.creator);
+                  deleteRoom(r.id, r.name);
                 }}
-                className="text-red-400 hover:text-red-500 text-xs ml-2"
+                className="opacity-0 group-hover:opacity-100 transition text-red-400 hover:text-red-500"
+                title="Excluir sala"
               >
-                ✕
+                <Trash2 size={16} />
               </button>
             )}
           </div>
         ))}
       </div>
 
-      <div className="mt-4">
+      {/* ➕ Criar nova sala */}
+      <div className="border-t border-[#0A9396]/40 p-3 flex items-center gap-2 bg-[#001B26]/80">
         <input
           value={newRoom}
           onChange={(e) => setNewRoom(e.target.value)}
-          placeholder="nova sala..."
-          className="w-full px-3 py-2 text-sm rounded bg-slate-800 border border-slate-700 focus:ring-2 focus:ring-blue-500 outline-none"
+          placeholder="Nova sala"
+          className="flex-1 px-3 py-2 rounded-lg bg-[#002733] text-[#E9D8A6] border border-[#0A9396]/40 focus:ring-2 focus:ring-[#0A9396] outline-none"
         />
         <button
-          onClick={handleCreateRoom}
-          className="mt-2 w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded transition"
+          onClick={createRoom}
+          className="p-2 rounded-lg bg-[#0A9396] hover:bg-[#0a7f83] transition"
+          title="Criar sala"
         >
-          Criar
+          <PlusCircle size={18} className="text-white" />
         </button>
-        {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
+      </div>
+
+      {/* 🚪 Logout */}
+      <div className="border-t border-[#0A9396]/40 p-3 bg-[#001B26]/80 flex justify-center">
+        <button
+          onClick={onLogout}
+          className="flex items-center gap-2 text-cyan-300 hover:text-cyan-200 transition"
+        >
+          <LogOut size={16} />
+          Sair
+        </button>
       </div>
     </aside>
   );

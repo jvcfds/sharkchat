@@ -3,156 +3,112 @@ import express from "express";
 import { WebSocketServer } from "ws";
 import { v4 as uuidv4 } from "uuid";
 import cors from "cors";
-import sqlite3 from "sqlite3";
-import { open } from "sqlite";
+import Database from "better-sqlite3";
 
 const app = express();
-app.use(cors({ origin: "*", methods: ["GET", "POST", "DELETE"] }));
+app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// 🧠 Inicializa banco SQLite
-let db;
-(async () => {
-  db = await open({
-    filename: "./sharkchat.db",
-    driver: sqlite3.Database,
-  });
+const db = new Database("./sharkchat.db");
 
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS rooms (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      creator TEXT NOT NULL
-    )
-  `);
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS rooms (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    creator TEXT NOT NULL
+  )
+`).run();
 
-  // 🧹 Limpa todas as salas, exceto "geral"
-  await db.run(`DELETE FROM rooms WHERE name != 'geral'`);
+const geral = db.prepare("SELECT * FROM rooms WHERE name = ?").get("geral");
+if (!geral) {
+  db.prepare("INSERT INTO rooms (id, name, creator) VALUES (?, ?, ?)").run(
+    uuidv4(),
+    "geral",
+    "system"
+  );
+  console.log("✅ Sala 'geral' criada automaticamente.");
+}
 
-  // 🔹 Garante que "geral" exista
-  const geral = await db.get("SELECT * FROM rooms WHERE name = ?", ["geral"]);
-  if (!geral) {
-    await db.run(
-      "INSERT INTO rooms (id, name, creator) VALUES (?, ?, ?)",
-      [uuidv4(), "geral", "system"]
-    );
-    console.log("✅ Sala geral criada automaticamente.");
-  }
-
-  console.log("✅ Banco SQLite conectado e limpo (mantida apenas sala geral).");
-})();
-
-// 🔌 Servidor HTTP + WebSocket
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-// Armazenamento em memória
-const rooms = {};
-const creators = {};
+const memMessages = {};
+const usersByRoom = {};
+const typingUsers = {}; // { room: Set(names) }
 
-// 🧾 LOGIN
+function broadcast(room, data) {
+  wss.clients.forEach((client) => {
+    if (client.readyState === 1 && client.room === room) {
+      client.send(JSON.stringify(data));
+    }
+  });
+}
+
+function broadcastUsers(room) {
+  const users = Array.from(wss.clients)
+    .filter((c) => c.readyState === 1 && c.room === room)
+    .map((c) => c.name);
+  broadcast(room, { type: "users", users });
+}
+
+function broadcastTyping(room) {
+  broadcast(room, {
+    type: "typing",
+    users: Array.from(typingUsers[room] || []),
+  });
+}
+
 app.post("/login", (req, res) => {
   const { name } = req.body;
-  if (!name || name.trim().length < 2)
-    return res.status(400).json({ error: "Nome inválido" });
+  if (!name?.trim()) return res.status(400).json({ error: "Nome inválido" });
+  res.json({ id: uuidv4(), name });
+});
+
+app.get("/rooms", (_, res) => {
+  res.json(db.prepare("SELECT * FROM rooms").all());
+});
+
+app.post("/rooms", (req, res) => {
+  const { name, creator } = req.body;
+  if (!name || !creator) return res.status(400).json({ error: "Dados inválidos" });
+  if (name.toLowerCase() === "geral") return res.status(400).json({ error: "A sala 'geral' já existe." });
 
   const id = uuidv4();
+  db.prepare("INSERT INTO rooms (id, name, creator) VALUES (?, ?, ?)").run(id, name, creator);
+  console.log(`📦 Nova sala criada: "${name}" por ${creator}`);
   res.json({ id, name });
 });
 
-// 📜 LISTAR SALAS
-app.get("/rooms", async (_, res) => {
-  try {
-    const all = await db.all("SELECT * FROM rooms");
-    res.json(all);
-  } catch {
-    res.status(500).json({ error: "Erro ao listar salas." });
-  }
-});
-
-// ➕ CRIAR SALA
-app.post("/rooms", async (req, res) => {
-  const { name, creator } = req.body;
-  if (!name || !creator)
-    return res.status(400).json({ error: "Dados inválidos" });
-
-  if (name.toLowerCase() === "geral")
-    return res.status(400).json({ error: "A sala 'geral' já existe e é fixa." });
-
-  try {
-    const id = uuidv4();
-    await db.run("INSERT INTO rooms (id, name, creator) VALUES (?, ?, ?)", [
-      id,
-      name,
-      creator,
-    ]);
-    rooms[id] = [];
-    creators[id] = creator;
-    res.json({ id, name });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Erro ao criar sala." });
-  }
-});
-
-// 🗑️ EXCLUIR SALA
-app.delete("/rooms/:id", async (req, res) => {
+app.delete("/rooms/:id", (req, res) => {
   const { id } = req.params;
-  const { userId } = req.body;
+  const room = db.prepare("SELECT * FROM rooms WHERE id = ?").get(id);
+  if (!room) return res.status(404).json({ error: "Sala não encontrada" });
+  if (room.name.toLowerCase() === "geral") return res.status(400).json({ error: "A sala 'geral' não pode ser excluída." });
 
-  if (!id || !userId)
-    return res.status(400).json({ error: "Dados inválidos." });
-
-  try {
-    const room = await db.get("SELECT * FROM rooms WHERE id = ?", [id]);
-    if (!room) return res.status(404).json({ error: "Sala não encontrada." });
-
-    if (room.name === "geral")
-      return res
-        .status(400)
-        .json({ error: "A sala 'geral' não pode ser excluída." });
-
-    if (room.creator.trim() !== userId.trim()) {
-      console.log(`🚫 ${userId} tentou excluir ${room.name} (não é o criador).`);
-      return res.status(403).json({ error: "Apenas o criador pode excluir esta sala." });
-    }
-
-    await db.run("DELETE FROM rooms WHERE id = ?", [id]);
-    delete rooms[id];
-    delete creators[id];
-
-    console.log(`🗑️ Sala "${room.name}" excluída por ${userId}`);
-    res.json({ success: true });
-  } catch (err) {
-    console.error("Erro ao excluir sala:", err);
-    res.status(500).json({ error: "Erro interno ao excluir sala." });
-  }
+  db.prepare("DELETE FROM rooms WHERE id = ?").run(id);
+  delete memMessages[room.name];
+  console.log(`🗑️ Sala "${room.name}" excluída.`);
+  res.json({ ok: true });
 });
 
-// 🌐 WEBSOCKET
 wss.on("connection", (ws, req) => {
   const params = new URLSearchParams(req.url.replace("/", ""));
   const room = params.get("room");
-  const id = params.get("id");
   const name = params.get("name");
-
-  if (!room || !id || !name) return;
+  if (!room || !name) return;
 
   ws.room = room;
-  ws.id = id;
   ws.name = name;
 
-  if (!rooms[room]) rooms[room] = [];
-  if (!creators[room]) creators[room] = id;
+  if (!memMessages[room]) memMessages[room] = [];
+  usersByRoom[room] = usersByRoom[room] || new Set();
+  typingUsers[room] = typingUsers[room] || new Set();
 
-  console.log(`🟢 ${name} entrou na sala ${room}`);
+  usersByRoom[room].add(name);
+  ws.send(JSON.stringify({ type: "history", messages: memMessages[room] }));
+  broadcastUsers(room);
 
-  ws.send(JSON.stringify({ type: "history", messages: rooms[room] }));
-  broadcast(room, {
-    type: "system",
-    text: `${name} entrou na sala.`,
-    users: getUsersInRoom(room),
-  });
+  console.log(`👤 ${name} entrou na sala "${room}"`);
 
   ws.on("message", (data) => {
     try {
@@ -162,76 +118,42 @@ wss.on("connection", (ws, req) => {
         const message = {
           id: uuidv4(),
           user: name,
-          text: msg.text,
+          text: msg.text || "",
           image: msg.image || null,
-          time: new Date().toLocaleTimeString("pt-BR", {
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-          }),
+          time: new Date().toLocaleTimeString(),
         };
-        rooms[room].push(message);
+        memMessages[room].push(message);
         broadcast(room, { type: "message", ...message });
       }
 
+      // ✏️ Usuário está digitando
       if (msg.type === "typing") {
-        broadcast(room, { type: "typing", user: name }, ws);
+        typingUsers[room].add(name);
+        broadcastTyping(room);
       }
 
-      if (msg.type === "clear" && creators[room] === id) {
-        rooms[room] = [];
-        broadcast(room, {
-          type: "system",
-          clear: true,
-          text: "💨 O criador limpou o chat.",
-        });
+      // ✋ Parou de digitar
+      if (msg.type === "stop_typing") {
+        typingUsers[room].delete(name);
+        broadcastTyping(room);
       }
-    } catch (e) {
-      console.error("Erro ao processar mensagem:", e);
+    } catch (err) {
+      console.error("❌ Erro ao processar mensagem:", err);
     }
   });
 
   ws.on("close", () => {
-    console.log(`🔴 ${name} saiu da sala ${room}`);
-    broadcast(room, {
-      type: "system",
-      text: `${name} saiu da sala.`,
-      users: getUsersInRoom(room),
-    });
+    usersByRoom[room]?.delete(name);
+    typingUsers[room]?.delete(name);
+    broadcastUsers(room);
+    broadcastTyping(room);
+    broadcast(room, { type: "system", text: `${name} saiu da sala.` });
   });
 });
 
-// 🔊 Broadcast helper
-function broadcast(room, data, exclude) {
-  wss.clients.forEach((client) => {
-    if (client.readyState === 1 && client.room === room && client !== exclude) {
-      client.send(JSON.stringify(data));
-    }
-  });
-}
+app.get("/", (_, res) => res.send("<h1>🦈 SharkChat rodando!</h1>"));
 
-// 👥 Usuários online
-function getUsersInRoom(room) {
-  const users = [];
-  wss.clients.forEach((c) => {
-    if (c.room === room && c.name) users.push(c.name);
-  });
-  return users;
-}
-
-// 🌍 Página inicial (Railway status)
-app.get("/", (req, res) => {
-  res.send(`
-    <h1>🦈 SharkChat rodando!</h1>
-    <p>HTTP ativo em: <b>${req.hostname}</b></p>
-    <p>WebSocket ativo em: <code>wss://${req.hostname}</code></p>
-  `);
-});
-
-// 🚀 Inicializa servidor
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ SharkChat ONLINE:
-HTTP → http://localhost:${PORT}
-WS   → ws://localhost:${PORT}`);
+  console.log(`✅ SharkChat rodando em http://localhost:${PORT}`);
 });

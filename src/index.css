@@ -2,13 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
+/* fundo e texto base SEMPRE presentes (evita telas vazias em transições) */
 html, body, #root {
   height: 100%;
+  width: 100%;
   margin: 0;
-  padding: 0;
-  background-color: theme("colors.gray.50");
+  background-color: #000c13; /* oceano profundo */
+  color: #e9d8a6;            /* areia */
+  transition: background-color .6s ease, color .6s ease;
 }
 
-body.dark {
-  background-color: theme("colors.slate.900");
+/* transição de tema consistente */
+.transition-theme {
+  transition: background-color .6s ease, color .6s ease, border-color .6s ease;
+}
+
+/* tipografia base */
+body {
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", "Noto Sans", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  overflow: hidden;
 }
