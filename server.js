@@ -155,5 +155,6 @@ app.get("/", (_, res) => res.send("<h1>🦈 SharkChat rodando!</h1>"));
 
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ SharkChat rodando em http://localhost:${PORT}`);
+  console.log(`✅ SharkChat rodando na porta ${PORT}`);
 });
+
