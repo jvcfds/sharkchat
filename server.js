@@ -6,7 +6,14 @@ import cors from "cors";
 import Database from "better-sqlite3";
 
 const app = express();
-app.use(cors({ origin: "*" }));
+app.use(cors({
+  origin: [
+    "https://sharkchat-rouge.vercel.app", // frontend Vercel
+    "http://localhost:5173"               // opcional, pra testes locais
+  ],
+  methods: ["GET", "POST", "DELETE"],
+  allowedHeaders: ["Content-Type"]
+}));
 app.use(express.json());
 
 const db = new Database("./sharkchat.db");
