@@ -1,150 +1,119 @@
-import { useEffect, useState } from "react";
-import { PlusCircle, Trash2, LogOut, Moon, Sun } from "lucide-react";
+import React, { useEffect, useState } from "react";
 
-interface SidebarProps {
-  user: { id: string; name: string };
-  currentRoom: string;
-  onSelectRoom: (room: string) => void;
-  onLogout: () => void;
-  onThemeToggle: () => void;
-  theme: "dark" | "light";
+interface Room {
+  name: string;
+  creator: string;
 }
 
-export function Sidebar({
-  user,
-  currentRoom,
-  onSelectRoom,
-  onLogout,
-  onThemeToggle,
-  theme,
-}: SidebarProps) {
-  const [rooms, setRooms] = useState<{ id: string; name: string }[]>([]);
+interface Props {
+  serverHttp: string;
+  currentRoom: string;
+  userName: string;
+  onSelectRoom: (room: string) => void;
+}
+
+export default function Sidebar({ serverHttp, currentRoom, userName, onSelectRoom }: Props) {
+  const [rooms, setRooms] = useState<Room[]>([]);
   const [newRoom, setNewRoom] = useState("");
 
-  // Carrega as salas
-  const fetchRooms = async () => {
+  const loadRooms = async () => {
     try {
-      const res = await fetch("http://localhost:8080/rooms");
+      const res = await fetch(`${serverHttp}/rooms`);
       const data = await res.json();
-      setRooms(data);
+      setRooms(data.rooms || []);
     } catch (err) {
       console.error("Erro ao carregar salas:", err);
     }
   };
 
-  useEffect(() => {
-    fetchRooms();
-  }, []);
-
-  // Criar nova sala
   const createRoom = async () => {
-    if (!newRoom.trim()) return;
+    const name = newRoom.trim().toLowerCase();
+    if (!name) return;
     try {
-      const res = await fetch("http://localhost:8080/rooms", {
+      await fetch(`${serverHttp}/rooms`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newRoom, creator: user.name }),
+        body: JSON.stringify({ name, creator: userName }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setRooms((prev) => [...prev, data]);
       setNewRoom("");
+      await loadRooms();
+      onSelectRoom(name);
     } catch (err) {
-      alert("❌ Erro ao criar sala");
+      console.error("Erro ao criar sala:", err);
     }
   };
 
-  // Excluir sala
-  const deleteRoom = async (roomId: string, roomName: string) => {
-    if (roomName.toLowerCase() === "geral") return;
-    if (!confirm(`Tem certeza que deseja excluir a sala "${roomName}"?`)) return;
+  const deleteRoom = async (name: string) => {
+    const confirmDelete = confirm(`Excluir sala #${name}?`);
+    if (!confirmDelete) return;
     try {
-      await fetch(`http://localhost:8080/rooms/${roomId}`, { method: "DELETE" });
-      setRooms((prev) => prev.filter((r) => r.id !== roomId));
+      const res = await fetch(
+        `${serverHttp}/rooms/${encodeURIComponent(name)}?by=${encodeURIComponent(userName)}`,
+        { method: "DELETE" }
+      );
+      const result = await res.json();
+
+      if (result.ok) {
+        await loadRooms();
+        if (currentRoom === name) onSelectRoom("geral");
+      } else {
+        alert(result.error || "Não foi possível excluir a sala.");
+      }
     } catch (err) {
-      alert("❌ Erro ao excluir sala");
+      console.error("Erro ao excluir sala:", err);
+      alert("Erro ao excluir a sala.");
     }
   };
+
+  useEffect(() => {
+    loadRooms();
+  }, []);
 
   return (
-    <aside className="flex flex-col bg-[#001823] text-[#E9D8A6] w-full sm:w-64 border-r border-[#0A9396]/40 transition-all">
-      {/* 🦈 Cabeçalho do usuário */}
-      <div className="flex items-center justify-between p-4 border-b border-[#0A9396]/40">
-        <div>
-          <h2 className="text-lg font-bold text-cyan-400">{user.name}</h2>
-          <p className="text-xs text-cyan-300/70">conectado</p>
-        </div>
+    <aside className="w-64 bg-[#0b1f29]/80 backdrop-blur-md border-r border-cyan-900/40 p-4 flex flex-col gap-3">
+      <div className="text-cyan-300 font-semibold">Salas</div>
 
-        {/* Botão de tema */}
-        <button
-          onClick={onThemeToggle}
-          className="p-2 rounded-full hover:bg-[#002733] transition"
-          title={theme === "dark" ? "Modo claro" : "Modo escuro"}
-        >
-          {theme === "dark" ? (
-            <Sun size={18} className="text-yellow-400" />
-          ) : (
-            <Moon size={18} className="text-cyan-400" />
-          )}
-        </button>
-      </div>
-
-      {/* 📜 Lista de salas */}
-      <div className="flex-1 overflow-y-auto px-2 py-3 space-y-1 scrollbar-thin scrollbar-thumb-[#0A9396]/40 scrollbar-track-transparent">
+      <div className="flex-1 overflow-y-auto space-y-2">
         {rooms.map((r) => (
-          <div
-            key={r.id}
-            className={`group flex items-center justify-between p-2 rounded-lg cursor-pointer transition ${
-              currentRoom === r.name
-                ? "bg-[#0A9396] text-white"
-                : "hover:bg-[#002733]"
-            }`}
-            onClick={() => onSelectRoom(r.name)}
-          >
-            <span className="truncate font-medium">{r.name}</span>
+          <div key={r.name} className="flex items-center gap-2">
+            <button
+              onClick={() => onSelectRoom(r.name)}
+              className={`flex-1 text-left px-3 py-2 rounded-xl border ${
+                r.name === currentRoom
+                  ? "bg-teal-600/20 border-teal-500/40 text-cyan-100"
+                  : "bg-[#0a1a23] border-cyan-900/40 text-cyan-200/80 hover:bg-[#0f2430]"
+              }`}
+              title={`Criador: ${r.creator}`}
+            >
+              #{r.name}
+            </button>
 
-            {/* ❌ Só mostra botão de excluir se não for “geral” */}
-            {r.name.toLowerCase() !== "geral" && (
+            {/* Botão de excluir visível só pro criador */}
+            {r.creator === userName && r.name !== "geral" && (
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteRoom(r.id, r.name);
-                }}
-                className="opacity-0 group-hover:opacity-100 transition text-red-400 hover:text-red-500"
-                title="Excluir sala"
+                onClick={() => deleteRoom(r.name)}
+                title="Excluir (apenas criador)"
+                className="px-2 py-2 rounded-lg bg-red-600/80 hover:bg-red-600 text-white"
               >
-                <Trash2 size={16} />
+                🗑️
               </button>
             )}
           </div>
         ))}
       </div>
 
-      {/* ➕ Criar nova sala */}
-      <div className="border-t border-[#0A9396]/40 p-3 flex items-center gap-2 bg-[#001B26]/80">
+      <div className="space-y-2 mt-2">
         <input
           value={newRoom}
           onChange={(e) => setNewRoom(e.target.value)}
-          placeholder="Nova sala"
-          className="flex-1 px-3 py-2 rounded-lg bg-[#002733] text-[#E9D8A6] border border-[#0A9396]/40 focus:ring-2 focus:ring-[#0A9396] outline-none"
+          placeholder="nova sala..."
+          className="w-full px-3 py-2 rounded-xl bg-[#0a1a23] text-white border border-cyan-900/50 outline-none focus:ring-2 focus:ring-cyan-500/70"
         />
         <button
           onClick={createRoom}
-          className="p-2 rounded-lg bg-[#0A9396] hover:bg-[#0a7f83] transition"
-          title="Criar sala"
+          className="w-full py-2 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 font-semibold"
         >
-          <PlusCircle size={18} className="text-white" />
-        </button>
-      </div>
-
-      {/* 🚪 Logout */}
-      <div className="border-t border-[#0A9396]/40 p-3 bg-[#001B26]/80 flex justify-center">
-        <button
-          onClick={onLogout}
-          className="flex items-center gap-2 text-cyan-300 hover:text-cyan-200 transition"
-        >
-          <LogOut size={16} />
-          Sair
+          + Criar sala
         </button>
       </div>
     </aside>
